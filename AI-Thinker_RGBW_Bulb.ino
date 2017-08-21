@@ -80,7 +80,7 @@ void verifyFingerprint() {
 
   if (!wifiClient.connect(MQTT_SERVER, MQTT_SERVER_PORT)) {
     DEBUG_PRINTLN(F("ERROR: Connection failed. Halting execution"));
-    delay(1000);
+    delay(2500);
     ESP.reset();
     /*
        TODO: Doing something smarter than rebooting the device
@@ -90,8 +90,8 @@ void verifyFingerprint() {
   if (wifiClient.verify(TLS_FINGERPRINT, MQTT_SERVER)) {
     DEBUG_PRINTLN(F("INFO: Connection secure"));
   } else {
-    DEBUG_PRINTLN(F("ERROR: Connection insecure! Halting execution"));
-    delay(1000);
+    DEBUG_PRINTLN(F("ERROR: Connection insecure!"));
+    delay(2500);
     ESP.reset();
     /*
        TODO: Doing something smarter than rebooting the device
@@ -550,7 +550,11 @@ void setup() {
   verifyFingerprint();
 #endif
 
+#if defined(MQTT_AUTO_ID)
   sprintf(MQTT_CLIENT_ID, "%06X", ESP.getChipId());
+#else
+  sprintf(MQTT_CLIENT_ID, "%s", MQTT_CLIENT_NAME);
+#endif
 
 #if defined(MQTT_HOME_ASSISTANT_SUPPORT)
   sprintf(MQTT_CONFIG_TOPIC, MQTT_CONFIG_TOPIC_TEMPLATE, MQTT_HOME_ASSISTANT_DISCOVERY_PREFIX, MQTT_CLIENT_ID);
