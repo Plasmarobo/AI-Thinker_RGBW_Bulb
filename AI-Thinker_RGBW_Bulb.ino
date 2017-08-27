@@ -80,8 +80,8 @@ void verifyFingerprint() {
 
   if (!wifiClient.connect(MQTT_SERVER, MQTT_SERVER_PORT)) {
     DEBUG_PRINTLN(F("ERROR: Connection failed. Halting execution"));
-    delay(2500);
-    ESP.reset();
+    //delay(2500);
+    //ESP.reset();
     /*
        TODO: Doing something smarter than rebooting the device
     */
@@ -91,8 +91,8 @@ void verifyFingerprint() {
     DEBUG_PRINTLN(F("INFO: Connection secure"));
   } else {
     DEBUG_PRINTLN(F("ERROR: Connection insecure!"));
-    delay(2500);
-    ESP.reset();
+    //delay(2500);
+    //ESP.reset();
     /*
        TODO: Doing something smarter than rebooting the device
     */
@@ -408,6 +408,16 @@ void handleMQTTMessage(char* p_topic, byte* p_payload, unsigned int p_length) {
         cmd = CMD_NOT_DEFINED;
       }
     }
+
+    if(root.containsKey("transition")) {
+      uint32_t transition_time = root["transition"];
+      bulb.setTransition(transition_time);
+      DEBUG_PRINTLN(F("INFO: Transition time changed to: "));
+      DEBUG_PRINTLN(bulb.setTransition(transition_time));
+      cmd = CMD_STATE_CHANGED;
+    } else {
+      bulb.setTransition(0);
+    }
   }
 }
 
@@ -465,6 +475,7 @@ void connectToMQTT() {
           root["white_value"] = true;
           root["color_temp"] = true;
           root["effect"] = true;
+          root["transition"] = true;
           JsonArray& effect_list = root.createNestedArray("effect_list");
           effect_list.add(EFFECT_NOT_DEFINED_NAME);
           effect_list.add(EFFECT_RAINBOW_NAME);
@@ -518,6 +529,7 @@ void handleCMD() {
       color["b"] = bulb.getColor().blue;
       root["white_value"] = bulb.getColor().white;
       root["color_temp"] = bulb.getColorTemperature();
+      root["transition"] = bulb.getTransition();
       root.printTo(jsonBuffer, sizeof(jsonBuffer));
       publishToMQTT(MQTT_STATE_TOPIC, jsonBuffer);
       break;

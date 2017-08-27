@@ -1,5 +1,15 @@
 #include "AI-Thinker_RGBW_Bulb.h"
 
+#if defined(DEBUG_TELNET)
+extern WiFiServer  telnetServer;
+extern WiFiClient  telnetClient;
+#define     DEBUG_PRINT(x)    telnetClient.print(x)
+#define     DEBUG_PRINTLN(x)  telnetClient.println(x)
+#else
+#define     DEBUG_PRINT(x)
+#define     DEBUG_PRINTLN(x)
+#endif
+
 volatile uint8_t effect = EFFECT_NOT_DEFINED;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -29,6 +39,8 @@ void AIRGBWBulb::init(void) {
 
   // sets initial state to false
   m_my9291->setState(true);
+  m_transitionStart = 0;
+  m_transitionDuration = 0;
 }
 
 void AIRGBWBulb::loop(void) {
@@ -51,10 +63,12 @@ void AIRGBWBulb::loop(void) {
       }
       break;
   }
+  // Handle transition state updates via linear interpolation
+  setLEDs();
 }
 
 ///////////////////////////////////////////////////////////////////////////
-//   STATE
+//   STATE: Not subject to transition
 ///////////////////////////////////////////////////////////////////////////
 bool AIRGBWBulb::getState(void) {
   return m_my9291->getState();
@@ -71,10 +85,10 @@ bool AIRGBWBulb::setState(bool p_state) {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-//   BRIGHTNESS
+//   BRIGHTNESS: Subject to transition
 ///////////////////////////////////////////////////////////////////////////
 uint8_t AIRGBWBulb::getBrightness(void) {
-  return m_brightness;
+  return (uint8_t) getTransitionValue(m_brightness, m_brightnessNew);
 }
 
 bool AIRGBWBulb::setBrightness(uint8_t p_brightness) {
@@ -83,20 +97,19 @@ bool AIRGBWBulb::setBrightness(uint8_t p_brightness) {
     return false;
 
   // saves the new brightness value
-  m_brightness = p_brightness;
-
+  m_brightnessNew = p_brightness;
+  
   if (m_color.white != 0)
-    //m_color.white = p_brightness;
     return setWhite(p_brightness);
 
-  return setColor();
+  return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////
-//   RGB COLOR
+//   RGB COLOR: Subject to transition
 ///////////////////////////////////////////////////////////////////////////
 Color AIRGBWBulb::getColor(void) {
-  return m_color;
+  return getTransitionColor();
 }
 
 bool AIRGBWBulb::setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue) {
@@ -104,40 +117,46 @@ bool AIRGBWBulb::setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue) {
     return false;
 
   // saves the new values
-  m_color.red = p_red;
-  m_color.green = p_green;
-  m_color.blue = p_blue;
+  m_colorNew.red = p_red;
+  m_colorNew.green = p_green;
+  m_colorNew.blue = p_blue;
 
   // switches off the white leds
-  m_color.white = 0;
+  m_colorNew.white = 0;
 
-  return setColor();
+  return true;
 }
 
-bool AIRGBWBulb::setColor() {
+bool AIRGBWBulb::setLEDs() {
+  bool success = false;
   // maps the RGB values with the actual brightness
-  uint8_t red = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[m_color.red]) : m_color.red;
-  uint8_t green = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[m_color.green]) : m_color.green;
-  uint8_t blue = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[m_color.blue]) : m_color.blue;
+  Color c = getTransitionColor();
+  uint8_t red = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[c.red]) : c.red;
+  uint8_t green = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[c.green]) : c.green;
+  uint8_t blue = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[c.blue]) : c.blue;
 
-  red = map(red, 0, 255, 0, m_brightness);
-  green = map(green, 0, 255, 0, m_brightness);
-  blue = map(blue, 0, 255, 0, m_brightness);
-
-  // sets the new color
+  uint8_t brightness = getTransitionValue(m_brightness, m_brightnessNew);
+  red = map(red, 0, 255, 0, brightness);
+  green = map(green, 0, 255, 0, brightness);
+  blue = map(blue, 0, 255, 0, brightness);
+  
   m_my9291->setColor((my9291_color_t) {
     red,
     green,
     blue,
-    0
+    c.white
   });
 
   // checks if the values have been successfully updated
   my9291_color_t my9291Color = m_my9291->getColor();
-  if (my9291Color.red != red || my9291Color.green != green || my9291Color.blue != blue)
-    return false;
-
-  return true;
+  if (my9291Color.red == red && my9291Color.green == green && my9291Color.blue == blue && my9291Color.white == c.white)
+    success = true;
+  
+  if (millis() - m_transitionStart >= m_transitionDuration) {
+    m_color = m_colorNew;
+    m_transitionDuration = 0;
+  }
+  return success;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -149,26 +168,13 @@ bool AIRGBWBulb::setWhite(uint8_t p_white) {
     return false;
 
   // saves the new white value
-  m_color.white = p_white;
-  m_brightness = p_white;
+  m_colorNew.white = p_white;
+  m_brightnessNew = p_white;
 
   // switch off the RGB leds
-  m_color.red = 0;
-  m_color.green = 0;
-  m_color.blue = 0;
-
-  // adjusts the white value
-  m_my9291->setColor((my9291_color_t) {
-    0,
-    0,
-    0,
-    m_color.white
-  });
-
-  // checks if the value has been successfully updated
-  my9291_color_t my9291Color = m_my9291->getColor();
-  if (my9291Color.white != m_color.white)
-    return false;
+  m_colorNew.red = 0;
+  m_colorNew.green = 0;
+  m_colorNew.blue = 0;
 
   return true;
 }
@@ -177,7 +183,7 @@ bool AIRGBWBulb::setWhite(uint8_t p_white) {
 //   GETTER/SETTER COLOR TEMPERATURE
 ///////////////////////////////////////////////////////////////////////////
 uint16_t AIRGBWBulb::getColorTemperature(void) {
-  return m_colorTemperature;
+  return getTransitionValue(m_colorTemperature, m_colorTemperatureNew);
 }
 
 bool AIRGBWBulb::setColorTemperature(uint16_t p_colorTemperature) {
@@ -186,10 +192,10 @@ bool AIRGBWBulb::setColorTemperature(uint16_t p_colorTemperature) {
     return false;
 
   // switches off the white leds
-  m_color.white = 0;
+  m_colorNew.white = 0;
 
   // saves the new colour temperature
-  m_colorTemperature = p_colorTemperature;
+  m_colorTemperatureNew = p_colorTemperature;
 
   // https://fr.wikipedia.org/wiki/Mired
   // http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
@@ -207,16 +213,16 @@ bool AIRGBWBulb::setColorTemperature(uint16_t p_colorTemperature) {
 
   // computes red
   if (tmpKelvin <= 66) {
-    m_color.red = 255;
+    m_colorNew.red = 255;
   } else {
     float red = tmpKelvin - 60;
     red = 329.698727446 * pow(red, -0.1332047592);
     if (red < 0) {
-      m_color.red = 0;
+      m_colorNew.red = 0;
     } else if (red > 255) {
-      m_color.red = 255;
+      m_colorNew.red = 255;
     } else {
-      m_color.red = red;
+      m_colorNew.red = red;
     }
   }
 
@@ -225,44 +231,62 @@ bool AIRGBWBulb::setColorTemperature(uint16_t p_colorTemperature) {
     float green = tmpKelvin;
     green = 99.4708025861 * log(green) - 161.1195681661;
     if (green < 0) {
-      m_color.green = 0;
+      m_colorNew.green = 0;
     } else if (green > 255) {
-      m_color.green = 255;
+      m_colorNew.green = 255;
     } else {
-      m_color.green = green;
+      m_colorNew.green = green;
     }
   } else {
     float green = tmpKelvin - 60;
     green = 288.1221695283 * pow(green, -0.0755148492);
     if (green < 0) {
-      m_color.green = 0;
+      m_colorNew.green = 0;
     } else if (green > 255) {
-      m_color.green = 255;
+      m_colorNew.green = 255;
     } else {
-      m_color.green = green;
+      m_colorNew.green = green;
     }
   }
 
   // computes blue
   if (tmpKelvin <= 66) {
-    m_color.blue = 255;
+    m_colorNew.blue = 255;
   } else {
     if (tmpKelvin <= 19) {
-      m_color.blue = 0;
+      m_colorNew.blue = 0;
     } else {
       float blue = tmpKelvin - 10;
       blue = 138.5177312231 * log(blue) - 305.0447927307;
       if (blue < 0) {
-        m_color.blue = 0;
+        m_colorNew.blue = 0;
       } else if (blue > 255) {
-        m_color.blue = 255;
+        m_colorNew.blue = 255;
       } else {
-        m_color.blue = blue;
+        m_colorNew.blue = blue;
       }
     }
   }
 
-  return setColor();
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//   TRANSITION
+///////////////////////////////////////////////////////////////////////////
+bool AIRGBWBulb::setTransition(uint32_t p_transition) {
+  // Note: Don't finish previous transition, instead continue
+  //       smoothly from where it left off.
+  m_transitionDuration = p_transition * 1000;
+  m_transitionStart = millis();
+  DEBUG_PRINTLN(F("TD:"));
+  DEBUG_PRINTLN(m_transitionDuration);
+  DEBUG_PRINTLN(F("TS:"));
+  DEBUG_PRINTLN(m_transitionStart);
+}
+
+uint32_t AIRGBWBulb::getTransition() {
+  return m_transitionDuration / 1000;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -274,9 +298,11 @@ bool AIRGBWBulb::setEffect(const char* p_effect) {
     return true;
   } else if (strcmp(p_effect, EFFECT_RAINBOW_NAME) == 0) {
     effect = EFFECT_RAMBOW;
+    m_transitionDuration = 0;
     return true;
   } else if (strcmp(p_effect, EFFECT_BLINK_NAME) == 0) {
     effect = EFFECT_BLINK;
+    m_transitionDuration = 0;
     return true;
   }
 
@@ -316,5 +342,31 @@ bool AIRGBWBulb::isGammaCorrectionEnabled(void) {
 
 void AIRGBWBulb::isGammaCorrectionEnabled(bool p_isGammaCorrectionEnabled) {
   m_isGammaCorrectionEnabled = p_isGammaCorrectionEnabled;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//   QUADRATIC EASING
+///////////////////////////////////////////////////////////////////////////
+float AIRGBWBulb::getTransitionValue(float initial_value, float final_value) {
+  if(m_transitionDuration == 0 || (millis() - m_transitionStart) > m_transitionDuration) {
+    return final_value;
+  }
+  float t = ((float)millis() - (float)m_transitionStart) / ((float)m_transitionDuration * 2);
+  float delta = final_value - initial_value;
+  if (t < 1.0f) {
+    return ((delta / 2.0f) * t * t) + initial_value;
+  }
+  t -= 1.0f;
+  return ((-delta /2.0f) * ((t * (t-2.0f)) - 1.0f)) + initial_value;
+}
+
+Color AIRGBWBulb::getTransitionColor() {
+  Color c = {
+    getTransitionValue(m_color.red, m_colorNew.red),
+    getTransitionValue(m_color.blue, m_colorNew.blue),
+    getTransitionValue(m_color.green, m_colorNew.green),
+    getTransitionValue(m_color.white, m_colorNew.white)
+  };
+  return c;
 }
 

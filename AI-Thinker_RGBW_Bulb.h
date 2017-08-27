@@ -1,6 +1,7 @@
 #pragma once
 #ifndef _AI-THINKER_RGBW_BULB_
 #define _AI-THINKER_RGBW_BULB_
+#include <ESP8266WiFi.h>
 
 #include <my9291.h>         // https://github.com/xoseperez/my9291
 #include <ArduinoJson.h>    // https://github.com/bblanchon/ArduinoJson
@@ -55,8 +56,6 @@ enum CMD {
 #define EFFECT_BLINK_NAME       "Blink"
 #define EFFECT_BLINK_DELAY      500
 
-//#define EFFECT_LIST EFFECT_RAMBOW_NAME
-
 enum EFFECT {
   EFFECT_NOT_DEFINED,
   EFFECT_RAMBOW,
@@ -81,6 +80,9 @@ class AIRGBWBulb {
 
     bool      setWhite(uint8_t p_white);
 
+    bool      setTransition(uint32_t p_transition);
+    uint32_t  getTransition(void);
+
     uint16_t  getColorTemperature(void);
     bool      setColorTemperature(uint16_t p_colorTemperature);
 
@@ -99,13 +101,24 @@ class AIRGBWBulb {
     Color     m_color;
     uint16_t  m_colorTemperature;
 
+    uint8_t   m_brightnessNew;
+    Color     m_colorNew;
+    uint16_t  m_colorTemperatureNew;
+
+    uint32_t  m_transitionStart;
+    uint32_t  m_transitionDuration;
+    bool      m_stateState = false;
+
     bool      m_isDiscovered = false;
 
     bool      m_isGammaCorrectionEnabled = false;
 
-    bool      setColor();
+    bool      setLEDs();
 
     void      rainbowEffect(uint8_t p_index);
+
+    float     getTransitionValue(float initial_value, float final_value);
+    Color     getTransitionColor();
 };
 
 #endif
