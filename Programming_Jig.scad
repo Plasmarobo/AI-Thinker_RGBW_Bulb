@@ -1,30 +1,37 @@
-DIAMETER=49;
-HOLE=2;
+DIAMETER=49.2;
+LIP_HEIGHT=0.5;
+WALL_THICKNESS=6.2;
+HOLD_RING_DIAMETER=DIAMETER-1.8;
+HOLD_RING_HEIGHT=1.6;
+TOP_DIAMETER=DIAMETER+8;
+TOP_HEIGHT=2.5;
+TOP_HOLE_DIAMETER=22;
+HOLE=1.75;
 /*GND_COORDINATE=[-11,5,0];
 IO_ZERO_COORDINATE=[4.5,12,0];
 POWER_COORDINATE=[-2.5,13,0];
 TX_COORDINATE=[-8.5,7.5,0];
 RX_COORDINATE=[-7.1,9,0];*/
-GND_COORDINATE=[11.72,-5.3,0];
-IO_ZERO_COORDINATE=[12.43,2.47,0];
-POWER_COORDINATE=[10.25,7.42,0];
+IO_ZERO_COORDINATE=[12.1,-5.0,0];
+POWER_COORDINATE=[12.7,2.6,0];
+RX_COORDINATE=[10.25,7.42,0];
 TX_COORDINATE=[8.5,9.19,0];
-RX_COORDINATE=[5.65,11.66,0];
-$fn=100;
+GND_COORDINATE=[5.65,10.96,0];
+$fn=200;
 difference() {
     union() {
-        cylinder(h=0.5, d=DIAMETER);
-        translate([0,0,0.5]) {
-            cylinder(h=1.9, d=DIAMETER-2);
-            translate([0,0,1.9]) {
-                cylinder(h=3, d=(DIAMETER+8));
+        cylinder(h=LIP_HEIGHT, d=DIAMETER);
+        translate([0,0,LIP_HEIGHT]) {
+            cylinder(h=HOLD_RING_HEIGHT, d=HOLD_RING_DIAMETER);
+            translate([0,0,HOLD_RING_HEIGHT]) {
+                cylinder(h=TOP_HEIGHT, d=(TOP_DIAMETER));
             };
         };
     };
     translate([0,0,-1]) {
         union() {
-            cylinder(h=10, d=22);
-            cylinder(h=5, d=43);
+            cylinder(h=10, d=TOP_HOLE_DIAMETER);
+            cylinder(h=5, d=HOLD_RING_DIAMETER-WALL_THICKNESS);
             translate(GND_COORDINATE) {
                 cylinder(h=10, d=HOLE);
             };
