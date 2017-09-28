@@ -15,6 +15,11 @@
 #include <PubSubClient.h>         // https://github.com/knolleary/pubsubclient
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson
 #include <ArduinoOTA.h>
+
+extern "C" {
+#include "user_interface.h"
+}
+
 #include "AI-Thinker_RGBW_Bulb.h"
 
 #if defined(DEBUG_TELNET)
@@ -31,8 +36,8 @@ WiFiClient  telnetClient;
 #define     DEBUG_PRINTLN(x)
 #endif
 
-StaticJsonBuffer<256> staticJsonBuffer;
-char jsonBuffer[256] = {0};
+StaticJsonBuffer<1024> staticJsonBuffer;
+char jsonBuffer[1024] = {0};
 
 volatile uint8_t cmd = CMD_NOT_DEFINED;
 
@@ -200,11 +205,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
       break;
     case WIFI_EVENT_STAMODE_DISCONNECTED:
       DEBUG_PRINTLN(F("ERROR: WiFi losts connection"));
-      /*
-         TODO: Doing something smarter than rebooting the device
-      */
-      delay(5000);
-      ESP.restart();
+      //ToDo: Enter AP mode for direct firmware update
       break;
     default:
       DEBUG_PRINT(F("INFO: WiFi event: "));
@@ -224,6 +225,8 @@ void setupWiFi() {
 
   WiFi.mode(WIFI_STA);
   WiFi.onEvent(handleWiFiEvent);
+  //SDK function to override MDNS
+  wifi_station_set_hostname(MQTT_CLIENT_NAME);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   randomSeed(micros());
@@ -331,6 +334,13 @@ void handleMQTTMessage(char* p_topic, byte* p_payload, unsigned int p_length) {
     if (!root.success()) {
       DEBUG_PRINTLN(F("ERROR: parseObject() failed"));
       return;
+    }
+
+    if (root.containsKey("force_discovery")) {
+      bool reset = root["force_discovery"];
+      if (reset) {
+        sendMQTTDiscovery();
+      }
     }
 
     if (root.containsKey("state")) {
@@ -451,6 +461,28 @@ void publishToMQTT(char* p_topic, char* p_payload) {
   }
 }
 
+void sendMQTTDiscovery() {
+  bulb.isDiscovered(true);
+  // MQTT discovery for Home Assistant
+  JsonObject& root = staticJsonBuffer.createObject();
+  root["name"] = FRIENDLY_NAME;
+  root["platform"] = "mqtt_json";
+  root["state_topic"] = MQTT_STATE_TOPIC;
+  root["command_topic"] = MQTT_COMMAND_TOPIC;
+  root["brightness"] = true;
+  root["rgb"] = true;
+  root["white_value"] = true;
+  root["color_temp"] = true;
+  root["effect"] = true;
+  root["transition"] = true;
+  JsonArray& effect_list = root.createNestedArray("effect_list");
+  effect_list.add(EFFECT_NOT_DEFINED_NAME);
+  effect_list.add(EFFECT_RAINBOW_NAME);
+  effect_list.add(EFFECT_BLINK_NAME);
+  root.printTo(jsonBuffer, sizeof(jsonBuffer));
+  publishToMQTT(MQTT_CONFIG_TOPIC, jsonBuffer);
+}
+
 /*
   Function called to connect/reconnect to the MQTT broker
 */
@@ -463,25 +495,7 @@ void connectToMQTT() {
 
 #if defined(MQTT_HOME_ASSISTANT_SUPPORT)
         if (!bulb.isDiscovered()) {
-          bulb.isDiscovered(true);
-          // MQTT discovery for Home Assistant
-          JsonObject& root = staticJsonBuffer.createObject();
-          root["name"] = FRIENDLY_NAME;
-          root["platform"] = "mqtt_json";
-          root["state_topic"] = MQTT_STATE_TOPIC;
-          root["command_topic"] = MQTT_COMMAND_TOPIC;
-          root["brightness"] = true;
-          root["rgb"] = true;
-          root["white_value"] = true;
-          root["color_temp"] = true;
-          root["effect"] = true;
-          root["transition"] = true;
-          JsonArray& effect_list = root.createNestedArray("effect_list");
-          effect_list.add(EFFECT_NOT_DEFINED_NAME);
-          effect_list.add(EFFECT_RAINBOW_NAME);
-          effect_list.add(EFFECT_BLINK_NAME);
-          root.printTo(jsonBuffer, sizeof(jsonBuffer));
-          publishToMQTT(MQTT_CONFIG_TOPIC, jsonBuffer);
+          sendMQTTDiscovery();
         }
 #endif
         subscribeToMQTT(MQTT_COMMAND_TOPIC);

@@ -130,6 +130,7 @@ bool AIRGBWBulb::setColor(uint8_t p_red, uint8_t p_green, uint8_t p_blue) {
 bool AIRGBWBulb::setLEDs() {
   bool success = false;
   // maps the RGB values with the actual brightness
+  // swap colors because the bulb is RBG
   Color c = getTransitionColor();
   uint8_t red = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[c.red]) : c.red;
   uint8_t green = (m_isGammaCorrectionEnabled) ? pgm_read_byte(&gamma8[c.green]) : c.green;
@@ -142,14 +143,14 @@ bool AIRGBWBulb::setLEDs() {
   
   m_my9291->setColor((my9291_color_t) {
     red,
-    green,
-    blue,
+    blue, //Swap blue and green channels
+    green, //blue
     c.white
   });
 
   // checks if the values have been successfully updated
   my9291_color_t my9291Color = m_my9291->getColor();
-  if (my9291Color.red == red && my9291Color.green == green && my9291Color.blue == blue && my9291Color.white == c.white)
+  if (my9291Color.red == red && my9291Color.green == blue && my9291Color.blue == green && my9291Color.white == c.white)
     success = true;
   
   if (millis() - m_transitionStart >= m_transitionDuration) {
@@ -226,44 +227,44 @@ bool AIRGBWBulb::setColorTemperature(uint16_t p_colorTemperature) {
     }
   }
 
-  // computes green
+  // computes green, green and blue are swapped
   if (tmpKelvin <= 66) {
-    float green = tmpKelvin;
-    green = 99.4708025861 * log(green) - 161.1195681661;
-    if (green < 0) {
-      m_colorNew.green = 0;
-    } else if (green > 255) {
-      m_colorNew.green = 255;
+    float blue = tmpKelvin;
+    blue = 99.4708025861 * log(blue) - 161.1195681661;
+    if (blue < 0) {
+      m_colorNew.blue = 0;
+    } else if (blue > 255) {
+      m_colorNew.blue = 255;
     } else {
-      m_colorNew.green = green;
+      m_colorNew.blue = blue;
     }
   } else {
-    float green = tmpKelvin - 60;
-    green = 288.1221695283 * pow(green, -0.0755148492);
-    if (green < 0) {
-      m_colorNew.green = 0;
-    } else if (green > 255) {
-      m_colorNew.green = 255;
+    float blue = tmpKelvin - 60;
+    blue = 288.1221695283 * pow(blue, -0.0755148492);
+    if (blue < 0) {
+      m_colorNew.blue = 0;
+    } else if (blue > 255) {
+      m_colorNew.blue = 255;
     } else {
-      m_colorNew.green = green;
+      m_colorNew.blue = blue;
     }
   }
 
   // computes blue
   if (tmpKelvin <= 66) {
-    m_colorNew.blue = 255;
+    m_colorNew.green = 255;
   } else {
     if (tmpKelvin <= 19) {
-      m_colorNew.blue = 0;
+      m_colorNew.green = 0;
     } else {
-      float blue = tmpKelvin - 10;
-      blue = 138.5177312231 * log(blue) - 305.0447927307;
-      if (blue < 0) {
-        m_colorNew.blue = 0;
-      } else if (blue > 255) {
-        m_colorNew.blue = 255;
+      float green = tmpKelvin - 10;
+      green = 138.5177312231 * log(green) - 305.0447927307;
+      if (green < 0) {
+        m_colorNew.green = 0;
+      } else if (green > 255) {
+        m_colorNew.green = 255;
       } else {
-        m_colorNew.blue = blue;
+        m_colorNew.green = green;
       }
     }
   }
